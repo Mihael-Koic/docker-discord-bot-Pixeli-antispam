@@ -1,4 +1,3 @@
-
 import os
 import re
 import time
@@ -61,6 +60,7 @@ database = Database()
 # =========================================================
 
 async def health(request):
+
     return web.Response(
         text="Discord Anti-Spam Bot is online!",
         status=200
@@ -103,12 +103,16 @@ async def start_web_server():
     await site.start()
 
     print("=" * 60)
+
     print(
-        f"🌐 HTTP server pokrenut na 0.0.0.0:{port}"
+        f"🌐 HTTP server pokrenut na "
+        f"0.0.0.0:{port}"
     )
+
     print(
         "❤️ Health check: /health"
     )
+
     print("=" * 60)
 
 
@@ -186,6 +190,12 @@ async def on_ready():
     print()
 
     print(
+        "🔐 Komande: SAMO MODERATORI"
+    )
+
+    print()
+
+    print(
         f"🌐 Serveri: {len(bot.guilds)}"
     )
 
@@ -232,11 +242,21 @@ async def on_message(
     message: discord.Message
 ):
 
+    # -----------------------------------------------------
+    # Ignoriraj botove
+    # -----------------------------------------------------
+
     if message.author.bot:
         return
 
+
+    # -----------------------------------------------------
+    # Ignoriraj privatne poruke
+    # -----------------------------------------------------
+
     if message.guild is None:
         return
+
 
     member = message.author
 
@@ -245,12 +265,17 @@ async def on_message(
     # ADMIN / MODERATOR ZAŠTITA
     # =====================================================
 
+    # Administratori se ne kažnjavaju
     if member.guild_permissions.administrator:
         return
 
+    # Moderatori koji imaju Manage Messages
+    # se također ne kažnjavaju
     if member.guild_permissions.manage_messages:
         return
 
+    # Moderatori koji imaju Moderate Members
+    # se također ne kažnjavaju
     if member.guild_permissions.moderate_members:
         return
 
@@ -306,10 +331,17 @@ async def on_message(
 
     messages = message_history[user_id]
 
+
+    # Dodaj poruku
+
     messages.append(
         current_time
     )
 
+
+    # -----------------------------------------------------
+    # Makni poruke starije od 5 sekundi
+    # -----------------------------------------------------
 
     while messages:
 
@@ -320,6 +352,7 @@ async def on_message(
             - oldest_message
             <= SPAM_WINDOW
         ):
+
             break
 
         messages.popleft()
@@ -331,16 +364,27 @@ async def on_message(
 
     if len(messages) >= SPAM_LIMIT:
 
+        # Spriječi višestruke timeoutove
+
         if user_id in timeout_users:
             return
+
 
         timeout_users.add(
             user_id
         )
 
+
+        # Resetiraj brojač
+
         messages.clear()
 
+
         try:
+
+            # -------------------------------------------------
+            # TIMEOUT
+            # -------------------------------------------------
 
             await member.timeout(
 
@@ -356,6 +400,11 @@ async def on_message(
 
             )
 
+
+            # -------------------------------------------------
+            # UPOZORENJE
+            # -------------------------------------------------
+
             warning = await message.channel.send(
 
                 f"⚠️ {member.mention}\n\n"
@@ -369,9 +418,15 @@ async def on_message(
 
             )
 
+
+            # -------------------------------------------------
+            # Obriši upozorenje nakon 10 sekundi
+            # -------------------------------------------------
+
             await warning.delete(
                 delay=10
             )
+
 
             print(
                 f"[ANTI-SPAM] "
@@ -416,6 +471,10 @@ async def on_message(
             )
 
 
+    # -----------------------------------------------------
+    # Command event
+    # -----------------------------------------------------
+
     await bot.process_commands(
         message
     )
@@ -423,12 +482,18 @@ async def on_message(
 
 # =========================================================
 # /INFO
+# SAMO MODERATORI
 # =========================================================
 
 @bot.tree.command(
     name="info",
     description="Informacije o botu i njegovim komandama."
 )
+
+@app_commands.checks.has_permissions(
+    manage_messages=True
+)
+
 async def info(
     interaction: discord.Interaction
 ):
@@ -446,6 +511,7 @@ async def info(
 
     )
 
+
     embed.add_field(
 
         name="🎮 Anti-Spam",
@@ -460,6 +526,7 @@ async def info(
 
     )
 
+
     embed.add_field(
 
         name="🔗 Link Protection",
@@ -473,6 +540,7 @@ async def info(
         inline=False
 
     )
+
 
     embed.add_field(
 
@@ -490,6 +558,22 @@ async def info(
         inline=False
 
     )
+
+
+    embed.add_field(
+
+        name="🔐 Pristup",
+
+        value=(
+            "Komande mogu koristiti samo "
+            "administratori i moderatori s "
+            "**Manage Messages** dozvolom."
+        ),
+
+        inline=False
+
+    )
+
 
     embed.add_field(
 
@@ -509,9 +593,11 @@ async def info(
 
     )
 
+
     embed.set_footer(
         text="Anti-Spam Protection"
     )
+
 
     await interaction.response.send_message(
         embed=embed
@@ -520,12 +606,18 @@ async def info(
 
 # =========================================================
 # /PING
+# SAMO MODERATORI
 # =========================================================
 
 @bot.tree.command(
     name="ping",
     description="Provjeri radi li bot."
 )
+
+@app_commands.checks.has_permissions(
+    manage_messages=True
+)
+
 async def ping(
     interaction: discord.Interaction
 ):
@@ -533,6 +625,7 @@ async def ping(
     latency = round(
         bot.latency * 1000
     )
+
 
     await interaction.response.send_message(
 
@@ -547,21 +640,32 @@ async def ping(
 
 # =========================================================
 # /STATUS
+# SAMO MODERATORI
 # =========================================================
 
 @bot.tree.command(
     name="status",
     description="Prikaži Anti-Spam status."
 )
+
+@app_commands.checks.has_permissions(
+    manage_messages=True
+)
+
 async def status(
     interaction: discord.Interaction
 ):
 
     protected_channels = (
+
         database.get_link_block_channels(
+
             interaction.guild.id
+
         )
+
     )
+
 
     embed = discord.Embed(
 
@@ -570,6 +674,7 @@ async def status(
         color=discord.Color.green()
 
     )
+
 
     embed.add_field(
 
@@ -581,6 +686,7 @@ async def status(
 
     )
 
+
     embed.add_field(
 
         name="Spam limit",
@@ -590,6 +696,7 @@ async def status(
         inline=True
 
     )
+
 
     embed.add_field(
 
@@ -601,6 +708,7 @@ async def status(
 
     )
 
+
     embed.add_field(
 
         name="Timeout",
@@ -610,6 +718,7 @@ async def status(
         inline=True
 
     )
+
 
     embed.add_field(
 
@@ -623,6 +732,7 @@ async def status(
 
     )
 
+
     embed.add_field(
 
         name="Serveri",
@@ -635,26 +745,38 @@ async def status(
 
     )
 
+
     await interaction.response.send_message(
+
         embed=embed
+
     )
 
 
 # =========================================================
 # /LINKBLOCK
+# SAMO MODERATORI
 # =========================================================
 
 @bot.tree.command(
+
     name="linkblock",
-    description="Upravljaj zabranom linkova u ovom kanalu."
+
+    description=(
+        "Upravljaj zabranom linkova "
+        "u ovom kanalu."
+    )
+
 )
 
 @app_commands.describe(
 
     action=(
+
         "on = zabrani linkove, "
         "off = dozvoli linkove, "
         "status = provjeri status"
+
     )
 
 )
@@ -664,18 +786,27 @@ async def status(
     action=[
 
         app_commands.Choice(
+
             name="on",
+
             value="on"
+
         ),
 
         app_commands.Choice(
+
             name="off",
+
             value="off"
+
         ),
 
         app_commands.Choice(
+
             name="status",
+
             value="status"
+
         )
 
     ]
@@ -683,7 +814,9 @@ async def status(
 )
 
 @app_commands.checks.has_permissions(
+
     manage_messages=True
+
 )
 
 async def linkblock(
@@ -694,17 +827,29 @@ async def linkblock(
 
 ):
 
-    channel_id = interaction.channel.id
+    channel_id = (
+        interaction.channel.id
+    )
 
-    guild_id = interaction.guild.id
+    guild_id = (
+        interaction.guild.id
+    )
 
+
+    # =====================================================
+    # ON
+    # =====================================================
 
     if action.value == "on":
 
         database.enable_link_block(
+
             guild_id,
+
             channel_id
+
         )
+
 
         await interaction.response.send_message(
 
@@ -722,12 +867,20 @@ async def linkblock(
         return
 
 
+    # =====================================================
+    # OFF
+    # =====================================================
+
     if action.value == "off":
 
         database.disable_link_block(
+
             guild_id,
+
             channel_id
+
         )
+
 
         await interaction.response.send_message(
 
@@ -742,14 +895,24 @@ async def linkblock(
         return
 
 
+    # =====================================================
+    # STATUS
+    # =====================================================
+
     if action.value == "status":
 
         enabled = (
+
             database.is_link_block_enabled(
+
                 guild_id,
+
                 channel_id
+
             )
+
         )
+
 
         if enabled:
 
@@ -790,15 +953,28 @@ async def on_app_command_error(
 
 ):
 
+    # -----------------------------------------------------
+    # Nema dozvolu
+    # -----------------------------------------------------
+
     if isinstance(
+
         error,
+
         app_commands.MissingPermissions
+
     ):
 
         message = (
-            "❌ Nemaš potrebne moderatorske "
-            "dozvole za ovu komandu."
+
+            "🚫 **Nemaš dozvolu za ovu komandu.**\n\n"
+
+            "Ove komande mogu koristiti samo "
+            "administratori i moderatori s "
+            "**Manage Messages** dozvolom."
+
         )
+
 
     else:
 
@@ -807,23 +983,31 @@ async def on_app_command_error(
         )
 
         message = (
+
             "❌ Došlo je do greške "
             "pri izvršavanju komande."
+
         )
 
 
     if interaction.response.is_done():
 
         await interaction.followup.send(
+
             message,
+
             ephemeral=True
+
         )
 
     else:
 
         await interaction.response.send_message(
+
             message,
+
             ephemeral=True
+
         )
 
 
@@ -839,14 +1023,23 @@ async def main():
             "DISCORD_TOKEN nije postavljen."
         )
 
-    # Pokreni HTTP server za Render
+
+    # -----------------------------------------------------
+    # Render HTTP server
+    # -----------------------------------------------------
+
     await start_web_server()
+
 
     print(
         "🚀 Pokretanje Discord bota..."
     )
 
-    # Pokreni Discord bot
+
+    # -----------------------------------------------------
+    # Discord bot
+    # -----------------------------------------------------
+
     await bot.start(
         TOKEN
     )
@@ -864,11 +1057,13 @@ if __name__ == "__main__":
             main()
         )
 
+
     except KeyboardInterrupt:
 
         print(
             "🛑 Bot je ručno zaustavljen."
         )
+
 
     except Exception as error:
 
