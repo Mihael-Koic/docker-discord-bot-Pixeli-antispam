@@ -1,13 +1,16 @@
+
 import os
 import re
 import time
 import asyncio
+
 from collections import defaultdict, deque
 from datetime import timedelta
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+from aiohttp import web
 
 from database import Database
 
@@ -18,12 +21,9 @@ from database import Database
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Anti-Spam
 SPAM_LIMIT = 5
 SPAM_WINDOW = 5
 TIMEOUT_MINUTES = 2
-
-# Vrijeme zaključavanja korisnika nakon timeouta
 TIMEOUT_LOCK_SECONDS = 3
 
 
@@ -57,13 +57,67 @@ database = Database()
 
 
 # =========================================================
+# RENDER HTTP SERVER
+# =========================================================
+
+async def health(request):
+    return web.Response(
+        text="Discord Anti-Spam Bot is online!",
+        status=200
+    )
+
+
+async def start_web_server():
+
+    app = web.Application()
+
+    app.router.add_get(
+        "/",
+        health
+    )
+
+    app.router.add_get(
+        "/health",
+        health
+    )
+
+    port = int(
+        os.getenv(
+            "PORT",
+            "10000"
+        )
+    )
+
+    runner = web.AppRunner(
+        app
+    )
+
+    await runner.setup()
+
+    site = web.TCPSite(
+        runner,
+        "0.0.0.0",
+        port
+    )
+
+    await site.start()
+
+    print("=" * 60)
+    print(
+        f"🌐 HTTP server pokrenut na 0.0.0.0:{port}"
+    )
+    print(
+        "❤️ Health check: /health"
+    )
+    print("=" * 60)
+
+
+# =========================================================
 # ANTI-SPAM MEMORY
 # =========================================================
 
-# Vrijeme zadnjih poruka korisnika
 message_history = defaultdict(deque)
 
-# Korisnici koji su upravo dobili timeout
 timeout_users = set()
 
 
@@ -78,9 +132,6 @@ URL_REGEX = re.compile(
 
 
 def contains_link(content: str) -> bool:
-    """
-    Provjerava sadrži li poruka link.
-    """
 
     return bool(
         URL_REGEX.search(content)
@@ -96,42 +147,64 @@ async def on_ready():
 
     print("=" * 60)
 
-    print(f"🛡️ BOT: {bot.user}")
-    print(f"🆔 ID: {bot.user.id}")
+    print(
+        f"🛡️ BOT: {bot.user}"
+    )
+
+    print(
+        f"🆔 ID: {bot.user.id}"
+    )
 
     print()
 
-    print("🎮 Anti-Spam: AKTIVAN")
-    print(f"📨 Limit: {SPAM_LIMIT} poruka")
-    print(f"⏱️ Prozor: {SPAM_WINDOW} sekundi")
-    print(f"🔇 Timeout: {TIMEOUT_MINUTES} minute")
+    print(
+        "🎮 Anti-Spam: AKTIVAN"
+    )
+
+    print(
+        f"📨 Limit: {SPAM_LIMIT} poruka"
+    )
+
+    print(
+        f"⏱️ Prozor: {SPAM_WINDOW} sekundi"
+    )
+
+    print(
+        f"🔇 Timeout: {TIMEOUT_MINUTES} minute"
+    )
 
     print()
 
-    print("🔗 Link Block: AKTIVAN")
+    print(
+        "🔗 Link Block: AKTIVAN"
+    )
+
+    print(
+        "💾 SQLite: AKTIVAN"
+    )
 
     print()
 
-    print(f"🌐 Serveri: {len(bot.guilds)}")
+    print(
+        f"🌐 Serveri: {len(bot.guilds)}"
+    )
 
     print("=" * 60)
-
-    # -----------------------------------------------------
-    # Registracija slash komandi
-    # -----------------------------------------------------
 
     try:
 
         synced = await bot.tree.sync()
 
         print(
-            f"✅ Registrirano {len(synced)} slash komandi."
+            f"✅ Registrirano "
+            f"{len(synced)} slash komandi."
         )
 
     except Exception as error:
 
         print(
-            f"❌ Greška kod registracije komandi: {error}"
+            f"❌ Greška kod registracije komandi: "
+            f"{error}"
         )
 
 
@@ -159,36 +232,24 @@ async def on_message(
     message: discord.Message
 ):
 
-    # -----------------------------------------------------
-    # Ignoriraj botove
-    # -----------------------------------------------------
-
     if message.author.bot:
         return
-
-
-    # -----------------------------------------------------
-    # Ignoriraj privatne poruke
-    # -----------------------------------------------------
 
     if message.guild is None:
         return
 
-
     member = message.author
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # ADMIN / MODERATOR ZAŠTITA
-    # -----------------------------------------------------
+    # =====================================================
 
     if member.guild_permissions.administrator:
         return
 
-
     if member.guild_permissions.manage_messages:
         return
-
 
     if member.guild_permissions.moderate_members:
         return
@@ -228,7 +289,8 @@ async def on_message(
             except discord.HTTPException as error:
 
                 print(
-                    f"[DISCORD GREŠKA] {error}"
+                    f"[DISCORD GREŠKA] "
+                    f"{error}"
                 )
 
             return
@@ -244,19 +306,10 @@ async def on_message(
 
     messages = message_history[user_id]
 
-
-    # -----------------------------------------------------
-    # Dodaj novu poruku
-    # -----------------------------------------------------
-
     messages.append(
         current_time
     )
 
-
-    # -----------------------------------------------------
-    # Obriši poruke starije od 5 sekundi
-    # -----------------------------------------------------
 
     while messages:
 
@@ -272,34 +325,22 @@ async def on_message(
         messages.popleft()
 
 
-    # -----------------------------------------------------
-    # Provjera spama
-    # -----------------------------------------------------
+    # =====================================================
+    # SPAM CHECK
+    # =====================================================
 
     if len(messages) >= SPAM_LIMIT:
 
-        # -------------------------------------------------
-        # Spriječi višestruke timeoutove
-        # -------------------------------------------------
-
         if user_id in timeout_users:
             return
-
 
         timeout_users.add(
             user_id
         )
 
-
-        # Reset brojača
         messages.clear()
 
-
         try:
-
-            # ---------------------------------------------
-            # TIMEOUT
-            # ---------------------------------------------
 
             await member.timeout(
 
@@ -312,12 +353,8 @@ async def on_message(
                     f"{SPAM_LIMIT} poruka u "
                     f"{SPAM_WINDOW} sekundi"
                 )
+
             )
-
-
-            # ---------------------------------------------
-            # UPOZORENJE
-            # ---------------------------------------------
 
             warning = await message.channel.send(
 
@@ -332,15 +369,9 @@ async def on_message(
 
             )
 
-
-            # ---------------------------------------------
-            # Obriši upozorenje nakon 10 sekundi
-            # ---------------------------------------------
-
             await warning.delete(
                 delay=10
             )
-
 
             print(
                 f"[ANTI-SPAM] "
@@ -361,14 +392,16 @@ async def on_message(
         except discord.HTTPException as error:
 
             print(
-                f"[DISCORD GREŠKA] {error}"
+                f"[DISCORD GREŠKA] "
+                f"{error}"
             )
 
 
         except Exception as error:
 
             print(
-                f"[GREŠKA] {error}"
+                f"[GREŠKA] "
+                f"{error}"
             )
 
 
@@ -382,10 +415,6 @@ async def on_message(
                 user_id
             )
 
-
-    # -----------------------------------------------------
-    # Command event
-    # -----------------------------------------------------
 
     await bot.process_commands(
         message
@@ -417,114 +446,72 @@ async def info(
 
     )
 
-
-    # -----------------------------------------------------
-    # Anti-Spam
-    # -----------------------------------------------------
-
     embed.add_field(
 
         name="🎮 Anti-Spam",
 
         value=(
-
             f"📨 **{SPAM_LIMIT} poruka**\n"
-
             f"⏱️ unutar **{SPAM_WINDOW} sekundi**\n"
-
             f"🔇 timeout **{TIMEOUT_MINUTES} minute**"
-
         ),
 
         inline=False
 
     )
-
-
-    # -----------------------------------------------------
-    # Link Protection
-    # -----------------------------------------------------
 
     embed.add_field(
 
         name="🔗 Link Protection",
 
         value=(
-
             "Administratori i moderatori mogu "
             "uključiti automatsko brisanje linkova "
             "u pojedinom kanalu."
-
         ),
 
         inline=False
 
     )
-
-
-    # -----------------------------------------------------
-    # Commands
-    # -----------------------------------------------------
 
     embed.add_field(
 
         name="📋 Komande",
 
         value=(
-
             "`/info` — informacije o botu\n"
-
             "`/ping` — provjera pinga\n"
-
             "`/status` — status Anti-Spama\n"
-
             "`/linkblock on` — zabrani linkove\n"
-
             "`/linkblock off` — dozvoli linkove\n"
-
             "`/linkblock status` — status linkova"
-
         ),
 
         inline=False
 
     )
-
-
-    # -----------------------------------------------------
-    # Protection
-    # -----------------------------------------------------
 
     embed.add_field(
 
         name="🛡️ Zaštita",
 
         value=(
-
             "• prati sve tekstualne kanale\n"
-
             "• ignorira botove\n"
-
             "• ignorira administratore\n"
-
             "• ignorira moderatore\n"
-
             "• automatski timeouta spamere\n"
-
             "• automatski briše linkove "
             "u zaštićenim kanalima"
-
         ),
 
         inline=False
 
     )
 
-
     embed.set_footer(
         text="Anti-Spam Protection"
     )
-
 
     await interaction.response.send_message(
         embed=embed
@@ -546,7 +533,6 @@ async def ping(
     latency = round(
         bot.latency * 1000
     )
-
 
     await interaction.response.send_message(
 
@@ -577,7 +563,6 @@ async def status(
         )
     )
 
-
     embed = discord.Embed(
 
         title="🛡️ Anti-Spam Status",
@@ -585,7 +570,6 @@ async def status(
         color=discord.Color.green()
 
     )
-
 
     embed.add_field(
 
@@ -597,7 +581,6 @@ async def status(
 
     )
 
-
     embed.add_field(
 
         name="Spam limit",
@@ -607,7 +590,6 @@ async def status(
         inline=True
 
     )
-
 
     embed.add_field(
 
@@ -619,7 +601,6 @@ async def status(
 
     )
 
-
     embed.add_field(
 
         name="Timeout",
@@ -629,7 +610,6 @@ async def status(
         inline=True
 
     )
-
 
     embed.add_field(
 
@@ -643,7 +623,6 @@ async def status(
 
     )
 
-
     embed.add_field(
 
         name="Serveri",
@@ -655,7 +634,6 @@ async def status(
         inline=True
 
     )
-
 
     await interaction.response.send_message(
         embed=embed
@@ -670,6 +648,7 @@ async def status(
     name="linkblock",
     description="Upravljaj zabranom linkova u ovom kanalu."
 )
+
 @app_commands.describe(
 
     action=(
@@ -679,6 +658,7 @@ async def status(
     )
 
 )
+
 @app_commands.choices(
 
     action=[
@@ -701,9 +681,11 @@ async def status(
     ]
 
 )
+
 @app_commands.checks.has_permissions(
     manage_messages=True
 )
+
 async def linkblock(
 
     interaction: discord.Interaction,
@@ -712,29 +694,17 @@ async def linkblock(
 
 ):
 
-    channel_id = (
-        interaction.channel.id
-    )
+    channel_id = interaction.channel.id
 
-    guild_id = (
-        interaction.guild.id
-    )
+    guild_id = interaction.guild.id
 
-
-    # =====================================================
-    # ON
-    # =====================================================
 
     if action.value == "on":
 
         database.enable_link_block(
-
             guild_id,
-
             channel_id
-
         )
-
 
         await interaction.response.send_message(
 
@@ -752,20 +722,12 @@ async def linkblock(
         return
 
 
-    # =====================================================
-    # OFF
-    # =====================================================
-
     if action.value == "off":
 
         database.disable_link_block(
-
             guild_id,
-
             channel_id
-
         )
-
 
         await interaction.response.send_message(
 
@@ -780,34 +742,22 @@ async def linkblock(
         return
 
 
-    # =====================================================
-    # STATUS
-    # =====================================================
-
     if action.value == "status":
 
         enabled = (
             database.is_link_block_enabled(
-
                 guild_id,
-
                 channel_id
-
             )
         )
 
-
         if enabled:
 
-            status_text = (
-                "🟢 UKLJUČENA"
-            )
+            status_text = "🟢 UKLJUČENA"
 
         else:
 
-            status_text = (
-                "🔴 ISKLJUČENA"
-            )
+            status_text = "🔴 ISKLJUČENA"
 
 
         await interaction.response.send_message(
@@ -865,21 +815,15 @@ async def on_app_command_error(
     if interaction.response.is_done():
 
         await interaction.followup.send(
-
             message,
-
             ephemeral=True
-
         )
 
     else:
 
         await interaction.response.send_message(
-
             message,
-
             ephemeral=True
-
         )
 
 
@@ -887,14 +831,47 @@ async def on_app_command_error(
 # START BOT
 # =========================================================
 
-if not TOKEN:
+async def main():
 
-    raise RuntimeError(
+    if not TOKEN:
 
-        "DISCORD_TOKEN nije postavljen "
-        "u .env datoteci."
+        raise RuntimeError(
+            "DISCORD_TOKEN nije postavljen."
+        )
 
+    # Pokreni HTTP server za Render
+    await start_web_server()
+
+    print(
+        "🚀 Pokretanje Discord bota..."
+    )
+
+    # Pokreni Discord bot
+    await bot.start(
+        TOKEN
     )
 
 
-bot.run(TOKEN)
+# =========================================================
+# MAIN
+# =========================================================
+
+if __name__ == "__main__":
+
+    try:
+
+        asyncio.run(
+            main()
+        )
+
+    except KeyboardInterrupt:
+
+        print(
+            "🛑 Bot je ručno zaustavljen."
+        )
+
+    except Exception as error:
+
+        print(
+            f"❌ Kritična greška: {error}"
+        )
