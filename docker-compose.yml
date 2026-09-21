@@ -1,0 +1,17 @@
+services:
+
+  discord-antispam:
+
+    build: .
+
+    container_name: discord-antispam
+
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./data:/app/data
+
+    init: true
